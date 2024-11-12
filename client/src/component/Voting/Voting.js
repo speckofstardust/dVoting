@@ -26,6 +26,7 @@ export default class Voting extends Component {
       candidates: [],
       isElStarted: false,
       isElEnded: false,
+      inRegion: false,
       currentVoter: {
         address: undefined,
         name: null,
@@ -36,6 +37,48 @@ export default class Voting extends Component {
       },
     };
   }
+
+  checkLocation = async () => {
+    if (!navigator.geolocation) {
+      this.setState({ locationError: "Geolocation is not supported by your browser" });
+      return;
+    }
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject);
+      });
+
+      const { latitude, longitude } = position.coords;
+      
+      // India's approximate bounding box
+      const INDIA_BOUNDS = {
+        north: 35.513327,
+        south: 6.4626999,
+        west: 68.1766451,
+        east: 97.395561,
+      };
+
+      // Check if coordinates are within India's bounding box
+      const isInIndia = 
+        latitude >= INDIA_BOUNDS.south &&
+        latitude <= INDIA_BOUNDS.north &&
+        longitude >= INDIA_BOUNDS.west &&
+        longitude <= INDIA_BOUNDS.east;
+
+      this.setState({ 
+        inRegion: isInIndia,
+        locationError: isInIndia ? null : "Voting is only allowed from within India"
+      });
+
+    } catch (error) {
+      this.setState({ 
+        locationError: "Unable to retrieve your location. Please enable location services.",
+        inRegion: false
+      });
+    }
+  };
+
   componentDidMount = async () => {
     // refreshing once
     if (!window.location.hash) {
@@ -110,6 +153,9 @@ export default class Voting extends Component {
       if (this.state.account === admin) {
         this.setState({ isAdmin: true });
       }
+
+      await this.checkLocation();
+
     } catch (error) {
       // Catch any errors for any of the above operations.
       alert(
@@ -121,6 +167,15 @@ export default class Voting extends Component {
 
   renderCandidates = (candidate) => {
     const castVote = async (id) => {
+
+      // Recheck location before casting vote
+      await this.checkLocation();
+      
+      if (!this.state.inRegion) {
+        alert("You must be in India to cast a vote.");
+        return;
+      }
+      
       await this.state.ElectionInstance.methods
         .vote(id)
         .send({ from: this.state.account, gas: 1000000 });
